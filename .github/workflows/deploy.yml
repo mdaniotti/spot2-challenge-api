@@ -12,40 +12,48 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Add EC2 to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy to EC2
         env:
-          PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
           HOST: ${{ secrets.EC2_HOST }}
           USER: ${{ secrets.EC2_USER }}
           APP_PATH: ${{ secrets.EC2_PATH }}
         run: |
-          # Configurar SSH
-          echo "$PRIVATE_KEY" > private_key.pem
-          chmod 600 private_key.pem
-
-          # Conectar a EC2 y ejecutar comandos de deploy
-          ssh -o StrictHostKeyChecking=no -i private_key.pem ${USER}@${HOST} << 'EOF'
+          ssh ${USER}@${HOST} << 'EOF'
             set -e
             
-            echo "🚀 Starting API deployment..."
+            echo "🚀 Starting deployment..."
             
             # Navegar al directorio del proyecto
             cd ${{ secrets.EC2_PATH }}
             
             # Hacer pull del último código
             echo "📥 Pulling latest code from main..."
-            git fetch origin main
-            git reset --hard origin/main
+            git pull origin main
             
             # Instalar/actualizar dependencias de Composer
             echo "📦 Installing Composer dependencies..."
             composer install --no-dev --optimize-autoloader --no-interaction
             
-            # Generar documentación Swagger
-            echo "📚 Generating API documentation..."
-            php artisan l5-swagger:generate
+            # Instalar/actualizar dependencias de NPM (si usas assets)
+            # echo "📦 Installing NPM dependencies..."
+            # npm install
+            # npm run build
+            
+            # Ejecutar migraciones
+            echo "🗄️ Running migrations..."
+            php artisan migrate --force
             
             # Limpiar y optimizar caches
             echo "🧹 Clearing caches..."
@@ -56,26 +64,23 @@ jobs:
             
             # Ajustar permisos
             echo "🔐 Setting permissions..."
-            chown -R www-data:www-data storage bootstrap/cache
-            chmod -R 775 storage bootstrap/cache
+            sudo chown -R www-data:www-data storage bootstrap/cache
+            sudo chmod -R 775 storage bootstrap/cache
             
-            # Recargar servicios web
-            echo "🔄 Reloading web services..."
-            sudo systemctl reload php8.4-fpm
-            sudo systemctl reload nginx
+            # Reiniciar servicios (si usas queue workers o supervisor)
+            # echo "🔄 Restarting queue workers..."
+            # php artisan queue:restart
+            # sudo supervisorctl restart laravel-worker:*
             
-            echo "✅ API Deployment completed successfully!"
+            echo "✅ Deployment completed successfully!"
           EOF
-
-          # Limpiar clave privada
-          rm -f private_key.pem
 
       - name: Deployment Status
         if: always()
         run: |
           if [ ${{ job.status }} == 'success' ]; then
-            echo "✅ API Deployment successful!"
+            echo "✅ Deployment successful!"
           else
-            echo "❌ API Deployment failed!"
+            echo "❌ Deployment failed!"
             exit 1
           fi
