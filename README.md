@@ -264,7 +264,29 @@ php artisan test --env=testing
 php artisan migrate --env=testing
 ```
 
-## 🔄 CI/CD
+### Despliegue Automático en EC2
+
+La aplicación está configurada para desplegarse automáticamente en AWS EC@ con cada push a la rama principal.
+
+#### Configuración del Pipeline
+
+**1. Archivo de Configuración**
+
+El archivo `.github/workflows/deploy.yml` en la raíz del proyecto define el pipeline de CI/CD:
+
+**2. Proceso de Deploy Automático**
+
+Cada vez que hagas push a la rama configurada:
+
+```bash
+git add .
+git commit -m "Nueva funcionalidad"
+git push origin main
+```
+
+**3. URLs de Acceso**
+
+- **URL de Producción**: `https://api.grupokoiviajes.com.ar/api`
 
 ### GitHub Actions (Ejemplo)
 
