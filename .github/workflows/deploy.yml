@@ -1,0 +1,81 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2
+        env:
+          PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ${{ secrets.EC2_USER }}
+          APP_PATH: ${{ secrets.EC2_PATH }}
+        run: |
+          # Configurar SSH
+          echo "$PRIVATE_KEY" > private_key.pem
+          chmod 600 private_key.pem
+
+          # Conectar a EC2 y ejecutar comandos de deploy
+          ssh -o StrictHostKeyChecking=no -i private_key.pem ${USER}@${HOST} << 'EOF'
+            set -e
+            
+            echo "🚀 Starting API deployment..."
+            
+            # Navegar al directorio del proyecto
+            cd ${{ secrets.EC2_PATH }}
+            
+            # Hacer pull del último código
+            echo "📥 Pulling latest code from main..."
+            git fetch origin main
+            git reset --hard origin/main
+            
+            # Instalar/actualizar dependencias de Composer
+            echo "📦 Installing Composer dependencies..."
+            composer install --no-dev --optimize-autoloader --no-interaction
+            
+            # Generar documentación Swagger
+            echo "📚 Generating API documentation..."
+            php artisan l5-swagger:generate
+            
+            # Limpiar y optimizar caches
+            echo "🧹 Clearing caches..."
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+            php artisan optimize
+            
+            # Ajustar permisos
+            echo "🔐 Setting permissions..."
+            chown -R www-data:www-data storage bootstrap/cache
+            chmod -R 775 storage bootstrap/cache
+            
+            # Recargar servicios web
+            echo "🔄 Reloading web services..."
+            sudo systemctl reload php8.4-fpm
+            sudo systemctl reload nginx
+            
+            echo "✅ API Deployment completed successfully!"
+          EOF
+
+          # Limpiar clave privada
+          rm -f private_key.pem
+
+      - name: Deployment Status
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ API Deployment successful!"
+          else
+            echo "❌ API Deployment failed!"
+            exit 1
+          fi
